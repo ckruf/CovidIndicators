@@ -7,8 +7,9 @@ from datetime import datetime
 from typing import Optional
 
 
-def print_correlation_matrix(df: pd.DataFrame, correlation_param: str = "stringency_index",
-                             description: Optional[str] = None) -> None:
+def print_correlation_matrix(df: pd.DataFrame, description: Optional[str] = None,
+                             correlation_param: str = "stringency_index") -> None:
+
     """
     Given a pandas dataframe, print a sorted correlation matrix for how all variables correlate to the given
     correlation parameter (by default 'stringency_index').
