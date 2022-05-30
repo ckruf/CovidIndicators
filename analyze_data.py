@@ -11,8 +11,8 @@ def print_correlation_matrix(df: pd.DataFrame, description: Optional[str] = None
                              correlation_param: str = "stringency_index") -> None:
 
     """
-    Given a pandas dataframe, print a sorted correlation matrix for how all variables correlate to the given
-    correlation parameter (by default 'stringency_index').
+    Given a pandas dataframe, a correlation variable and a description, print a sorted correlation matrix for how all
+    variables correlate to the given correlation parameter (by default 'stringency_index').
 
     :param df: dataframe with covid data for which we want correlation matrix
     :param correlation_param: str the parameter for which we want to find correlations
