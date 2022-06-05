@@ -71,31 +71,30 @@ def analyze_data(filepath: str, country_name: str, start_date: str = "2020-01-01
     covid_data_country_timeframe = covid_data_country[(covid_data_country['date'] > start_date) & (covid_data_country['date'] < end_date)]
     print_df_size(covid_data_country_timeframe, f"{country_name} from {start_date} to {end_date}")
     print_correlation_matrix(covid_data_country_timeframe, f"{country_name} from {start_date} to {end_date}")
-    display_scatter("icu_patients", covid_data_country_timeframe)
+    save_scatter("icu_patients", covid_data_country_timeframe)
 
 
-def display_scatter(independent_variable: str, df: pd.DataFrame) -> None:
+def save_scatter(independent_variable: str, df: pd.DataFrame) -> None:
     """
     Given an independent variable (such as 'new_cases'), and a dataframe, see how it affects the stringency index
     using linear regression, and display a basic scatter plot.
     
-    :param independent_variable: str name of variable whose effect we are trying to quantify 
+    :param independent_variable: str name of variable whose effect we are trying to quantify
+    :param df: dataframe containing data to be plotted
     :return: None
     """
     df = df[["stringency_index", independent_variable]].dropna()
-    x = df[[independent_variable]]
+    x = df[independent_variable]
     y = df["stringency_index"]
-    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.75)
-    lr_model = linear_model.LinearRegression()
-    lr_model.fit(x_train, y_train)
-    x_test = df[independent_variable].to_numpy().reshape(-1, 1)
-    y_test = df["stringency_index"].to_numpy().reshape(-1, 1)
-    plt.scatter(x[independent_variable], y, color="pink")
-    plt.plot(x_test, lr_model.predict(x_test), color="green")
-    plt.show()
-    print(lr_model.score(x, y))
-
-
+    plt.scatter(x=x, y=y)
+    plt.savefig("scatter.png")
+    # get equation of best fit lineq
+    reg = np.polyfit(x, y, deg=1)
+    print(f"equation of trendline is given by: {reg}")
+    trend = np.polyval(reg, x)
+    plt.scatter(x=x, y=y)
+    plt.plot(x, trend, 'r')
+    plt.savefig("scatter_trendline")
 
 
 
