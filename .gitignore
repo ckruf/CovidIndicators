@@ -2,3 +2,4 @@
 owid-covid-data.csv
 myapp.log
 .~lock.owid-covid-data.csv#
+*.png
