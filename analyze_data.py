@@ -62,10 +62,26 @@ def print_df_size(df: pd.DataFrame, description: Optional[str] = None) -> None:
 
 def analyze_data(filepath: str, country_name: str, start_date: str = "2020-01-01",
                  end_date: str = "2022-03-31", min_correlation: float = 0.45,
-                 plot_all: bool = False, plot_all_trendline: bool = False,
-                 multiple_regresion: bool = False, multiple_regression_alt_trendline: bool = False) -> None:
+                 plot_all: bool = False, plot_all_trendline: bool = False, multiple_regresion: bool = False,
+                 multiple_regression_alt_trendline: bool = False, drop_per: bool = False) -> None:
     """
-    Given the filepath to the covid data csv file, country of interest and  run linear regressions.
+    Given the filepath to the covid data csv file, country of interest and  run linear regressions, multiple linear
+    regressions and plot graphs (behaviour can be modified using bool switches).
+
+    Data produced includes:
+    - correlation matrix for the given country for all time (saved as csv file)
+    - correlation matrix for the given country for the given time range (saved as csv file)
+    - if plot_all, scatter plots without trendlines for all variables whose Pearson correlation (R value)
+    to 'stringency_index' is greater than the min_correlation (saved as png files)
+    - if plot_all_trendline, scatter plots with trendlines same as above
+    - if multiple_regression, the data used for the multiple linear regression as a csv file, R^2 value of the
+    multiple regression (in terminal output) and correlation coefficients (in terminal output)
+    - if multiple_regression_alt_trendline a predictive multiple regression (different method) is done, producing
+    the data used for the multiple regression (as a csv file), the R^2 value for the multiple regression (to terminal),
+    predicted values of stringency index from the multiple regression model compared to actual values of stringency
+    index (as a csv file), a scatter plot of predicted vs actual values (without trendline, as .png), correlation
+    coefficients (as a csv file) and errors in the predicted model compared to actual values (to terminal)
+    - if drop per, then 'per_million' and 'per_thousand' data is not included in plots
 
     :param filepath: path to the csv file
     :param country_name: name of country we are interested in
@@ -73,7 +89,10 @@ def analyze_data(filepath: str, country_name: str, start_date: str = "2020-01-01
     :param end_date: str in ISO format representing end of time range we are interested in
     :param min_correlation:
     :param plot_all: if True, scatter plots for all variables with correlation greater than min_correlation
-    :param plot_all_trendline: if True, scatter plots w/ trendline for all variables with correlation greater than min_correlation
+    :param plot_all_trendline: if True, scatter plots w/ trendline for all variables with correlation > min_correlation
+    :param multiple_regresion: if True, produce multiple linear regression model using first method, w/o scatter
+    :param multiple_regression_alt_trendline: if True, produce multiple regression model using second method, w/ scatter
+    :param drop_per: if True, drop _per_thousand and _per_million data from being plotted (since corr. same as absolute)
     :return: None
     """
     # read full dataframe with data for all countries, in full time range
@@ -114,7 +133,8 @@ def analyze_data(filepath: str, country_name: str, start_date: str = "2020-01-01
                                     min_correlation=min_correlation)
     # filter correlated params to remove 'per_thousand' and 'per_million' params, because within
     # same country, absolute quantity is enough
-    correlated = list(filter(lambda x: "per_thousand" not in x and "per_million" not in x, correlated))
+    if drop_per:
+        correlated = list(filter(lambda x: "per_thousand" not in x and "per_million" not in x, correlated))
     # make scatter for single parameter
     plot_scatter("positive_rate", covid_data_country_timeframe, country_name, start_date, end_date)
     plot_scatter_with_trendline("positive_rate", covid_data_country_timeframe, country_name, start_date, end_date)
@@ -143,8 +163,15 @@ def plot_scatter(independent_variable: str, df: pd.DataFrame, country_name: str,
     :param country_name: str country name (to label plot)
     :param start_date: str begin of date range (to label plot)
     :param end_date: str end of date range (to label plot)
+    :param dependent_variable: name of the dependent variable, defaults to 'stringency_index'
     :return: None
     """
+    if independent_variable == dependent_variable:
+        log.info(f"independent and dependent variable are both {independent_variable}, aborting")
+        return
+    msg = f"Plotting scatter withOUT trendline, country is {country_name} independent variable is {independent_variable}" \
+          f" and dependent variable is {dependent_variable}"
+    log.info(msg)
     # only get the two columns we are interested in from dataframe and drop NA values
     df = df[[dependent_variable, independent_variable]].dropna()
     if df.size < 5:
@@ -279,7 +306,6 @@ def alt_multiple_linear_regression_with_plot(predictors: List[str], df: pd.DataF
     pred_df.to_csv(f"predicted_vs_actual_values_alt_{country_name}.csv")
     pred_df = pred_df[["actual_value", "predicted_value"]]
     pred_df = pred_df.dropna()
-    pred_df = pred_df[pred_df.actual_value > 1]
     plot_scatter("actual_value", pred_df, country_name, start_date, end_date, "predicted_value")
     coeff_df = pd.DataFrame(model.coef_, x.columns, columns=['Coefficient'])
     coeff_df.to_csv(f"correlation_coefficients_multiple_regression_alt_{country_name}.csv")
