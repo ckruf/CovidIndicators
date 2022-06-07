@@ -5,7 +5,7 @@ from analyze_data import analyze_data
 
 DATASET_URL = "https://covid.ourworldindata.org/data/owid-covid-data.csv"
 
-COUNTRY = "Sweden"
+COUNTRY = "United Kingdom"
 START_DATE = "2020-03-01"
 END_DATE = "2020-12-31"
 
