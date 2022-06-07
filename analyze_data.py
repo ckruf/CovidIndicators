@@ -4,10 +4,11 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
-import seaborn as sns
 from datetime import datetime
 from typing import Optional, List
 from math import sqrt
+
+from app_logging import log
 
 
 def correlation_matrix(df: pd.DataFrame, description: Optional[str] = None,
@@ -61,7 +62,8 @@ def print_df_size(df: pd.DataFrame, description: Optional[str] = None) -> None:
 
 def analyze_data(filepath: str, country_name: str, start_date: str = "2020-01-01",
                  end_date: str = "2022-03-31", min_correlation: float = 0.45,
-                 plot_all: bool = False, plot_all_trendline: bool = False) -> None:
+                 plot_all: bool = False, plot_all_trendline: bool = False,
+                 multiple_regresion: bool = False, multiple_regression_alt_trendline: bool = False) -> None:
     """
     Given the filepath to the covid data csv file, country of interest and  run linear regressions.
 
@@ -94,7 +96,7 @@ def analyze_data(filepath: str, country_name: str, start_date: str = "2020-01-01
     # show number of data points for country for all time
     print_df_size(covid_data_country, country_name)
     # print correlation matrix for all time
-    _: List[str] = correlation_matrix(covid_data_country, f"{country_name} all time")
+    _: List[str] = correlation_matrix(covid_data_country, f"{country_name} all time corr mat")
 
     # convert start date and end date into datetime objects so we can use them to filter
     start_date_object: datetime = datetime.fromisoformat(start_date)
@@ -123,8 +125,11 @@ def analyze_data(filepath: str, country_name: str, start_date: str = "2020-01-01
     if plot_all_trendline:
         for param in correlated:
             plot_scatter_with_trendline(param, covid_data_country_timeframe, country_name, start_date, end_date)
-    multiple_linear_regression(correlated, covid_data_country_timeframe, country_name, start_date, end_date)
-    alt_multiple_linear_regression_with_plot(correlated, covid_data_country_timeframe, country_name, start_date, end_date)
+    if multiple_regresion:
+        multiple_linear_regression(correlated, covid_data_country_timeframe, country_name, start_date, end_date)
+    if multiple_regression_alt_trendline:
+        alt_multiple_linear_regression_with_plot(correlated, covid_data_country_timeframe, country_name, start_date,
+                                                 end_date)
 
 
 def plot_scatter(independent_variable: str, df: pd.DataFrame, country_name: str,
@@ -152,12 +157,12 @@ def plot_scatter(independent_variable: str, df: pd.DataFrame, country_name: str,
     plt.xlabel(independent_variable)
     plt.ylabel(dependent_variable)
     # save as image
-    plt.savefig(f"scatter_{independent_variable}_{country_name}.png")
+    plt.savefig(f"scatter_{dependent_variable}_{independent_variable}_{country_name}.png")
     plt.close()
 
 
 def plot_scatter_with_trendline(independent_variable: str, df: pd.DataFrame, country_name: str,
-                                start_date: str, end_date: str) -> None:
+                                start_date: str, end_date: str, dependent_variable: str = "stringency_index") -> None:
     """
     Given an independent variable (such as 'new_cases'), and a dataframe, produce a scatter plot, including
     a trendline, its equation and an R^2 value.
@@ -169,12 +174,21 @@ def plot_scatter_with_trendline(independent_variable: str, df: pd.DataFrame, cou
     :param end_date: str end of date range (to label plot)
     :return: None
     """
+    if independent_variable == dependent_variable:
+        log.info(f"independent and dependent variable are both {independent_variable}, aborting")
+        return
+    msg = f"Plotting scatter with trendline, country is {country_name} independent variable is {independent_variable}" \
+          f" and dependent variable is {dependent_variable}"
+    log.info(msg)
     # only get the two columns we are interested in from dataframe and drop NA values
-    df = df[["stringency_index", independent_variable]].dropna()
+    df = df[[dependent_variable, independent_variable]].dropna()
     if df.size < 5:
-        raise ValueError("Fewer than 5 records, no point in scatter")
+        msg = "Fewer than 5 records, no point in scatter"
+        print(msg)
+        log.info(msg)
+        return
     x = df[independent_variable]
-    y = df["stringency_index"]
+    y = df[dependent_variable]
     # get equation of best fit line
     reg = np.polyfit(x, y, deg=1)
     eqtn = np.poly1d(reg)
@@ -191,7 +205,7 @@ def plot_scatter_with_trendline(independent_variable: str, df: pd.DataFrame, cou
     plt.xlabel(independent_variable)
     plt.ylabel("stringency index")
     plt.plot(x, trend, 'r')
-    plt.savefig(f"scatter_trendline_{independent_variable}_{country_name}.png")
+    plt.savefig(f"scatter_trendline_stringency_index_{independent_variable}_{country_name}.png")
     plt.close()
 
 
@@ -214,9 +228,8 @@ def multiple_linear_regression(predictors: List[str], df: pd.DataFrame, country_
     df = df[interested_columns]
     # drop duplicate columns
     df = df.loc[:, ~df.columns.duplicated()]
-    df.to_csv("df_multiple_regression.csv")
     df = df.dropna()
-    df.to_csv("df_multiple_regression_na_dropped.csv")
+    df.to_csv(f"df_multiple_regression_data_{country_name}.csv")
     x = df[predictors]
     x = x.dropna()
     y = df["stringency_index"]
@@ -233,7 +246,7 @@ def multiple_linear_regression(predictors: List[str], df: pd.DataFrame, country_
 
 
 def alt_multiple_linear_regression_with_plot(predictors: List[str], df: pd.DataFrame, country_name: str,
-                                   start_date: str, end_date: str) -> None:
+                                             start_date: str, end_date: str) -> None:
     """
     Given a list of predictors (independent variables) for which we have data in the given data frame, produce
     a multiple linear regression model based on all the given predictors - alternative method.
@@ -251,9 +264,8 @@ def alt_multiple_linear_regression_with_plot(predictors: List[str], df: pd.DataF
     df = df[interested_columns]
     # drop duplicate columns
     df = df.loc[:, ~df.columns.duplicated()]
-    df.to_csv("df_multiple_regression.csv")
     df = df.dropna()
-    df.to_csv("df_multiple_regression_na_dropped.csv")
+    df.to_csv(f"df_multiple_regression_data_{country_name}_alt.csv")
     x = df[predictors]
     x = x.dropna()
     y = df["stringency_index"]
@@ -264,19 +276,13 @@ def alt_multiple_linear_regression_with_plot(predictors: List[str], df: pd.DataF
     r_squared = r2_score(y_test, y_pred) * 100
     print(f"R squared value is {r_squared}")
     pred_df = pd.DataFrame({'actual_value': y_test, 'predicted_value': y_pred, 'Difference': y_test - y_pred})
-    pred_df.to_csv(f"predicted_vs_actual_values_{country_name}.csv")
+    pred_df.to_csv(f"predicted_vs_actual_values_alt_{country_name}.csv")
     pred_df = pred_df[["actual_value", "predicted_value"]]
     pred_df = pred_df.dropna()
     pred_df = pred_df[pred_df.actual_value > 1]
-    print("Actual vs predicted values are: \n")
-    with pd.option_context("display.max_rows", None, "display.max_columns", None):
-        print(pred_df)
     plot_scatter("actual_value", pred_df, country_name, start_date, end_date, "predicted_value")
     coeff_df = pd.DataFrame(model.coef_, x.columns, columns=['Coefficient'])
-    coeff_df.to_csv(f"correlation_coefficients_multiple_regression_{country_name}.csv")
-    print(f"Mean Absolute Error: {mean_absolute_error(y_test, y_pred)}")
-    print(f"Mean Squared Error: {mean_squared_error(y_test, y_pred)}")
-    print(f"Root Mean Squared Error: {sqrt(mean_squared_error(y_test, y_pred))}")
-
-
-
+    coeff_df.to_csv(f"correlation_coefficients_multiple_regression_alt_{country_name}.csv")
+    print(f"ALT: Mean Absolute Error: {mean_absolute_error(y_test, y_pred)}")
+    print(f"ALT: Mean Squared Error: {mean_squared_error(y_test, y_pred)}")
+    print(f"ALT: Root Mean Squared Error: {sqrt(mean_squared_error(y_test, y_pred))}")
