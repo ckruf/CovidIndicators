@@ -48,11 +48,3 @@ def download(url: str, dest_folder: Optional[str] = None, redownload: bool = Fal
         log.error(msg)
         raise ConnectionError(msg)
 
-
-def delete_files() -> None:
-    """
-    Delete all .csv (except owid_covid_data.csv) and .png files in this directory. To be used between runs.
-
-    :return: None
-    """
-    pass
