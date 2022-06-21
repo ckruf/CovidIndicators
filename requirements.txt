@@ -6,3 +6,4 @@ numpy
 plotly
 requests
 statsmodels
+python-dateutil
