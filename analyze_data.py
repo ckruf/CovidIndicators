@@ -5,7 +5,9 @@ from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from datetime import datetime
-from typing import Optional, List, Union
+from dateutil.rrule import rrule, MONTHLY
+import calendar
+from typing import Optional, List, Union, Tuple
 from math import sqrt
 import os
 from pathlib import Path
@@ -13,8 +15,8 @@ from pathlib import Path
 from app_logging import log
 
 
-def filter_dataframe_country_timeframe(df: pd.DataFrame, country: str, start_date: Optional[str] = None,
-                                       end_date: Optional[str] = None) -> pd.DataFrame:
+def filter_dataframe_country_timeframe(df: pd.DataFrame, country: str, start_date: datetime,
+                                       end_date: datetime = None) -> pd.DataFrame:
     """
     Given the dataframe containing covid data for all countries for all time, return dataframe filtered for
     the given country, and also given time frame, if start date and end date provided.
@@ -30,15 +32,12 @@ def filter_dataframe_country_timeframe(df: pd.DataFrame, country: str, start_dat
     # raise error if dataframe is empty after querying
     if covid_data_country.size < 1:
         raise ValueError(f"No data exists for given country - {country} - either misspelled or non-existent.")
-    print_df_size(covid_data_country, f"{country} all time")
+    print_df_size(covid_data_country, f"{country} all time has size")
     if start_date is None or end_date is None:
         return covid_data_country
-    # convert start date and end date into datetime objects so we can use them to filter
-    start_date_object: datetime = datetime.fromisoformat(start_date)
-    end_date_object: datetime = datetime.fromisoformat(end_date)
     # time range query
-    covid_data_country_timeframe = covid_data_country[(covid_data_country['date'] > start_date_object) &
-                                                      (covid_data_country['date'] < end_date_object)]
+    covid_data_country_timeframe = covid_data_country[(covid_data_country['date'] > start_date) &
+                                                      (covid_data_country['date'] < end_date)]
     if covid_data_country_timeframe.size < 1:
         raise ValueError(f"No data exists for {country} between dates {start_date} and {end_date}")
     print_df_size(covid_data_country_timeframe, f"{country} between {start_date} and {end_date}")
@@ -114,20 +113,10 @@ def print_df_size(df: pd.DataFrame, description: Optional[str] = None) -> None:
 
 
 def analyze_data(filepath_covid_data: str,
-                 single_country: bool,
-                 country_name: str,
                  countries_list: List[str],
                  parameters_of_interest: List[str],
-                 compare_directly: bool = False,
                  start_date: str = "2020-01-01",
                  end_date: str = "2022-03-31",
-                 auto_corr_parameters: bool = True,
-                 min_correlation: float = 0.45,
-                 scatter_plot: bool = False,
-                 scatter_plot_trendline: bool = False,
-                 multiple_regression: bool = False,
-                 multiple_regression_alt_trendline: bool = False,
-                 drop_per: bool = False,
                  target_folder: Optional[str] = None) -> None:
     """
     Given the filepath to the covid data csv file, country of interest and  run linear regressions, multiple linear
@@ -149,15 +138,10 @@ def analyze_data(filepath_covid_data: str,
     - if drop per, then 'per_million' and 'per_thousand' data is not included in plots
 
     :param filepath_covid_data: path to the owid_covid_data.csv file
-    :param country_name: name of country we are interested in
+    :param countries_list: list of country names which we are interested in
+    :param parameters_of_interest: list of porameters we are interested in
     :param start_date: str in ISO format representing start of time range we are interested in
     :param end_date: str in ISO format representing end of time range we are interested in
-    :param min_correlation:
-    :param scatter_plot: if True, scatter plots for all variables with correlation greater than min_correlation
-    :param scatter_plot_trendline: if True, scatter plots w/ trendline for all variables with correlation > min_correlation
-    :param multiple_regression: if True, produce multiple linear regression model using first method, w/o scatter
-    :param multiple_regression_alt_trendline: if True, produce multiple regression model using second method, w/ scatter
-    :param drop_per: if True, drop _per_thousand and _per_million data from being plotted (since corr. same as absolute)
     :param target_folder: path to folder in which to create Results folder.
     :return: None
     """
@@ -186,123 +170,56 @@ def analyze_data(filepath_covid_data: str,
     # convert 'date' column to datetime format, so we can filter by date later
     covid_data['date'] = pd.to_datetime(covid_data['date'])
 
-    if auto_corr_parameters:
-        if single_country:
-            analyze_data_single_country(
-                covid_data=covid_data,
-                country_name=country_name,
-                parameters_of_interest=parameters_of_interest,
-                start_date=start_date,
-                end_date=end_date,
-                auto_corr_parameters=auto_corr_parameters,
-                min_correlation=min_correlation,
-                scatter_plot=scatter_plot,
-                scatter_plot_trendline=scatter_plot_trendline,
-                multiple_regression=multiple_regression,
-                multiple_regression_alt_trendline=multiple_regression_alt_trendline,
-                drop_per=drop_per,
-                target_folder_path=target_folder_path
-            )
-        else:
-            if compare_directly:
-                parameters_of_interest = []
-                for country in countries_list:
-                    filtered_df = filter_dataframe_country_timeframe(
-                        df=covid_data,
-                        country=country,
-                        start_date=start_date,
-                        end_date=end_date
-                    )
-                    correlated_params = correlation_matrix(
-                        df=filtered_df,
-                        description=f"{country} between {start_date} - {end_date}",
-                        min_correlation=min_correlation,
-                        save=False
-                    )
-                    parameters_of_interest.extend(correlated_params)
-                for country in countries_list:
-                    analyze_data_single_country(
-                        covid_data=covid_data,
-                        country_name=country,
-                        parameters_of_interest=parameters_of_interest,
-                        start_date=start_date,
-                        end_date=end_date,
-                        auto_corr_parameters=False,
-                        min_correlation=None,
-                        scatter_plot=scatter_plot,
-                        scatter_plot_trendline=scatter_plot_trendline,
-                        multiple_regression=multiple_regression,
-                        multiple_regression_alt_trendline=multiple_regression_alt_trendline,
-                        drop_per=drop_per,
-                        target_folder_path=target_folder_path
-                    )
-            else:
-                for country in countries_list:
-                    analyze_data_single_country(
-                        covid_data=covid_data,
-                        country_name=country,
-                        parameters_of_interest=parameters_of_interest,
-                        start_date=start_date,
-                        end_date=end_date,
-                        auto_corr_parameters=auto_corr_parameters,
-                        min_correlation=min_correlation,
-                        scatter_plot=scatter_plot,
-                        scatter_plot_trendline=scatter_plot_trendline,
-                        multiple_regression=multiple_regression,
-                        multiple_regression_alt_trendline=multiple_regression_alt_trendline,
-                        drop_per=drop_per,
-                        target_folder_path=target_folder_path
-                    )
-    else:
-        if single_country:
-            analyze_data_single_country(
-                covid_data=covid_data,
-                country_name=country_name,
-                parameters_of_interest=parameters_of_interest,
-                start_date=start_date,
-                end_date=end_date,
-                auto_corr_parameters=auto_corr_parameters,
-                min_correlation=min_correlation,
-                scatter_plot=scatter_plot,
-                scatter_plot_trendline=scatter_plot_trendline,
-                multiple_regression=multiple_regression,
-                multiple_regression_alt_trendline=multiple_regression_alt_trendline,
-                drop_per=drop_per,
-                target_folder_path=target_folder_path
-            )
-        else:
-            for country in countries_list:
-                analyze_data_single_country(
-                    covid_data=covid_data,
-                    country_name=country,
-                    parameters_of_interest=parameters_of_interest,
-                    start_date=start_date,
-                    end_date=end_date,
-                    auto_corr_parameters=auto_corr_parameters,
-                    min_correlation=min_correlation,
-                    scatter_plot=scatter_plot,
-                    scatter_plot_trendline=scatter_plot_trendline,
-                    multiple_regression=multiple_regression,
-                    multiple_regression_alt_trendline=multiple_regression_alt_trendline,
-                    drop_per=drop_per,
-                    target_folder_path=target_folder_path
-                )
+    for country in countries_list:
+        # round dates to first day in start date month and last day in end date month
+        start_date_object = datetime.fromisoformat(start_date)
+        floored_start_date = start_date_object.replace(day=1)
+        end_date_object = datetime.fromisoformat(end_date)
+        final_day = calendar.monthrange(end_date_object.year, end_date_object.month)[1]
+        ceilinged_end_date = end_date_object.replace(day=final_day)
+
+        find_monthly_correlations(covid_data=covid_data,
+                                  country_name=country,
+                                  parameters_of_interest=parameters_of_interest,
+                                  start_date=start_date,
+                                  end_date=end_date,
+                                  target_folder_path=target_folder_path)
 
 
-def analyze_data_single_country(covid_data: pd.DataFrame,
-                                country_name: str,
-                                parameters_of_interest: Optional[List[str]] = None,
-                                start_date: str = "2020-01-01",
-                                end_date: str = "2022-03-31",
-                                auto_corr_parameters: bool = True,
-                                min_correlation: Optional[float] = 0.45,
-                                scatter_plot: bool = False,
-                                scatter_plot_trendline: bool = False,
-                                multiple_regression: bool = False,
-                                multiple_regression_alt_trendline: bool = False,
-                                drop_per: bool = False,
-                                target_folder_path: Optional[Path] = None) -> Optional[List[str]]:
+def find_months(start_month: int, start_year: int, end_month: int, end_year: int) -> List[Tuple[int, int]]:
+    """
+    Given a start month and start year and an end month and end year, find all months in the given range (inclusive).
+    Returns a list of tuples of the form [(11, 2020), (12, 2020), (1, 2021)]
 
+    :param start_month: month of range beginning
+    :param start_year: year of range beginning
+    :param end_month: month of range end
+    :param end_year: year of range end
+    :return: list of tuples with the month and the year
+    """
+    start = datetime(start_year, start_month, 1)
+    end = datetime(end_year, end_month, 1)
+    return [(d.month, d.year) for d in rrule(MONTHLY, dtstart=start, until=end)]
+
+
+def find_monthly_correlations(covid_data: pd.DataFrame,
+                              country_name: str,
+                              parameters_of_interest: List[str],
+                              start_date: str,
+                              end_date: str,
+                              target_folder_path: Path) -> None:
+    """
+    Find correlations between parameters of interest and stringency index for one country for each whole month
+    between start date and end date.
+
+    :param covid_data: pandas dataframe containing all covid data
+    :param country_name: name of country we are interested in
+    :param parameters_of_interest: list of str parameters we are interested in
+    :param start_date: beginning of month
+    :param end_date: end of month
+    :param target_folder_path: folder to save results in
+    :return:
+    """
     # create folder for country
     country_path = os.path.join(target_folder_path, country_name)
     try:
@@ -310,40 +227,61 @@ def analyze_data_single_country(covid_data: pd.DataFrame,
     except FileExistsError:
         print("Country folder already exists, continuing")
 
+    raw_data_country_path = os.path.join(country_path, "raw_data")
+    try:
+        os.mkdir(raw_data_country_path)
+    except FileExistsError:
+        print("Raw data folder for country already exists, continuing")
+
     # show sample of dataframe and print all columns
     print(covid_data.head())
     column_list = covid_data.columns.values.tolist()
     print(f"All columns: {column_list}")
     print_df_size(covid_data, "all countries")
 
-    # filter for specific country and dates
-    covid_data_country_timeframe = filter_dataframe_country_timeframe(covid_data, country_name, start_date, end_date)
-    # save correlation matrices in time range (full version and version filtered for min_correlation)
-    correlated = correlation_matrix(df=covid_data_country_timeframe,
-                                    description=f"{country_name} {start_date} to {end_date}",
-                                    min_correlation=min_correlation if auto_corr_parameters else 0,
-                                    country_path=country_path)
-    if auto_corr_parameters:
-        parameters = correlated
-        if drop_per:
-            parameters = list(filter(lambda x: "per_thousand" not in x and "per_million" not in x, parameters))
-    else:
-        parameters = parameters_of_interest
+    start_date_object = datetime.fromisoformat(start_date)
+    end_date_object = datetime.fromisoformat(end_date)
+    months = find_months(start_date_object.month, start_date_object.year, end_date_object.month,
+                         end_date_object.year)
 
-    # make scatters for all parameters of interest (if option selected)
-    if scatter_plot:
-        for param in parameters:
-            plot_scatter(param, covid_data_country_timeframe, country_name, country_path, start_date, end_date)
-    if scatter_plot_trendline:
-        for param in parameters:
-            plot_scatter_with_trendline(param, covid_data_country_timeframe, country_name, country_path, start_date, end_date)
-    if multiple_regression:
-        multiple_linear_regression(parameters, covid_data_country_timeframe, country_name, country_path)
-    if multiple_regression_alt_trendline:
-        alt_multiple_linear_regression_with_plot(parameters, covid_data_country_timeframe, country_name, start_date,
-                                                 end_date, country_path)
-    if auto_corr_parameters:
-        return parameters
+    df = pd.DataFrame(columns=["country", "range_start", "range_end", "indicator", "correlation_to_stringency"])
+    for month, year in months:
+        month_start_date_object = datetime(year, month, 1)
+        final_day_in_month = calendar.monthrange(year, month)[1]
+        month_end_date_object = datetime(year, month, final_day_in_month)
+        # filter for specific country and dates
+        covid_data_country_timeframe = filter_dataframe_country_timeframe(covid_data, country_name, month_start_date_object,
+                                                                          month_end_date_object)
+        for param in parameters_of_interest:
+            single_param_df = covid_data_country_timeframe[[param, "stringency_index"]]
+            single_param_df_filtered = single_param_df.dropna()
+            file_path = os.path.join(raw_data_country_path, f"{country_name}_{param}_{month}_{year}_df_filtered.csv")
+            single_param_df_filtered.to_csv(file_path)
+            if single_param_df_filtered.size > 5:
+                x = single_param_df_filtered[param]
+                x_one_dimensional = x.values.reshape(-1, 1)  # must convert to 1D array for R^2 calculation
+                y = single_param_df_filtered["stringency_index"]
+                model = LinearRegression()
+                print(f"Looking for R^2 for {country_name} between {start_date} and {end_date}, param {param}")
+                print(f"Size of filtered df is {single_param_df_filtered.size}")
+                model.fit(x_one_dimensional, y)
+                r_squared = model.score(x_one_dimensional, y)
+            else:
+                r_squared = None
+                print(f"Did not look for R^2 value for {country_name} between {start_date} and {end_date} for"
+                      f"{param}, only {single_param_df_filtered.size - 1} datapoints available")
+            df_row = pd.DataFrame.from_records([{"country": country_name,
+                                                 "range_start": month_start_date_object,
+                                                 "range_end": month_end_date_object,
+                                                 "indicator": param,
+                                                 "correlation_to_stringency": r_squared}])
+            df = pd.concat([df, df_row], axis=0)
+    file_path = os.path.join(country_path, f"{country_name}_monthly_correlations.csv")
+    df.to_csv(file_path)
+
+
+def plot_graphs_whole_timerange() -> None:
+    pass
 
 
 def plot_scatter(independent_variable: str, df: pd.DataFrame, country_name: str, country_path: Union[Path, str],
@@ -390,7 +328,8 @@ def plot_scatter(independent_variable: str, df: pd.DataFrame, country_name: str,
     plt.close()
 
 
-def plot_scatter_with_trendline(independent_variable: str, df: pd.DataFrame, country_name: str, country_path: Union[str, Path],
+def plot_scatter_with_trendline(independent_variable: str, df: pd.DataFrame, country_name: str,
+                                country_path: Union[str, Path],
                                 start_date: str, end_date: str, dependent_variable: str = "stringency_index") -> None:
     """
     Given an independent variable (such as 'new_cases'), and a dataframe, produce a scatter plot, including
