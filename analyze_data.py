@@ -1,13 +1,16 @@
+import numpy
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas.core.series
+import statsmodels.api as sm
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from datetime import datetime
 from dateutil.rrule import rrule, MONTHLY
 import calendar
-from typing import Optional, List, Union, Tuple
+from typing import Optional, List, Union, Tuple, Dict
 from math import sqrt
 import os
 from pathlib import Path
@@ -45,62 +48,6 @@ def filter_dataframe_country_timeframe(df: pd.DataFrame, country: str, start_dat
     return covid_data_country_timeframe
 
 
-def correlation_matrix(df: pd.DataFrame,
-                       description: Optional[str] = None,
-                       correlation_param: str = "stringency_index",
-                       min_correlation: float = 0.45,
-                       save: bool = True,
-                       print_data: bool = True,
-                       country_path: Optional[Union[Path, str]] = None) -> List[str]:
-    """
-    Given a pandas dataframe, a correlation variable and a description, print a sorted correlation matrix for how all
-    variables correlate to the given correlation parameter (by default 'stringency_index'). Saves the produced
-    correlation matrix as a .csv and returns a list of parameters whose (absolute) Pearson R value is greater than the
-    min_correlation value (defaults to 0.45).
-
-    :param df: dataframe with covid data for which we want correlation matrix
-    :param description: description of the correlation matrix to be printed to console and used for csv filename
-    :param correlation_param: str the parameter for which we want to find correlations
-    :param min_correlation: the function will return all parameters whose correlation is greater than this value
-    :param save: bool indicator save correlation matrix to .csv?
-    :param print_data: bool indicator print correlation matrix?
-    :param country_path: path to folder with results for given country
-    :return: List[str] names of columns for which abs(R-value) > min correlation
-    """
-    # create folder
-    folder_path = os.path.join(country_path, "correlation_matrices")
-    try:
-        os.mkdir(folder_path)
-    except FileExistsError:
-        print("Folder already exists, continuing")
-    print(f"Finding correlation matrix {description}\n")
-    # get Pearson R values for all variables in the matrix
-    stringency_corr_mat = df.corr("pearson")
-    sorted_mat = stringency_corr_mat.unstack().sort_values()[correlation_param]
-    # print full length
-    if save:
-        filepath = os.path.join(country_path, "correlation_matrices", "full_correlation_matrix.csv")
-        sorted_mat.to_csv(filepath)
-    # drop NA values
-    filtered_mat = sorted_mat.dropna()
-    filtered_mat = filtered_mat.to_frame()
-    # filter to keep params whose correlation is greater than min correlation
-    filtered_mat = filtered_mat[abs(filtered_mat[0]) > min_correlation]
-    filename = description.replace(" ", "_")
-    if save and min_correlation > 0:
-        filepath = os.path.join(country_path, "correlation_matrices", "filtered_correlation_matrix.csv")
-        filtered_mat.to_csv(filepath)
-    if print_data:
-        print(f"Correlation matrix {description} - NA filtered\n")
-        # print filtered correlation matrix
-        with pd.option_context("display.max_rows", None, "display.max_columns", None):
-            print(filtered_mat)
-    # get all highly correlated params, convert to list and return
-    rows = filtered_mat.index
-    row_list = list(rows)
-    return row_list
-
-
 def print_df_size(df: pd.DataFrame, description: Optional[str] = None) -> None:
     """
     Given a pandas dataframe and a description, print its size (number of records).
@@ -117,7 +64,8 @@ def analyze_data(filepath_covid_data: str,
                  parameters_of_interest: List[str],
                  start_date: str = "2020-01-01",
                  end_date: str = "2022-03-31",
-                 target_folder: Optional[str] = None) -> None:
+                 target_folder: Optional[str] = None,
+                 predictive_repetitions: int = 5) -> None:
     """
     Given the filepath to the covid data csv file, country of interest and  run linear regressions, multiple linear
     regressions and plot graphs (behaviour can be modified using bool switches).
@@ -143,6 +91,7 @@ def analyze_data(filepath_covid_data: str,
     :param start_date: str in ISO format representing start of time range we are interested in
     :param end_date: str in ISO format representing end of time range we are interested in
     :param target_folder: path to folder in which to create Results folder.
+    :param predictive_repetitions: number of R^2 values to obtain using predictive model
     :return: None
     """
     if target_folder is None:
@@ -183,7 +132,8 @@ def analyze_data(filepath_covid_data: str,
                                   parameters_of_interest=parameters_of_interest,
                                   start_date=start_date,
                                   end_date=end_date,
-                                  target_folder_path=target_folder_path)
+                                  target_folder_path=target_folder_path,
+                                  repetitions=predictive_repetitions)
 
 
 def find_months(start_month: int, start_year: int, end_month: int, end_year: int) -> List[Tuple[int, int]]:
@@ -207,7 +157,8 @@ def find_monthly_correlations(covid_data: pd.DataFrame,
                               parameters_of_interest: List[str],
                               start_date: str,
                               end_date: str,
-                              target_folder_path: Path) -> None:
+                              target_folder_path: Path,
+                              repetitions: int) -> None:
     """
     Find correlations between parameters of interest and stringency index for one country for each whole month
     between start date and end date.
@@ -218,6 +169,7 @@ def find_monthly_correlations(covid_data: pd.DataFrame,
     :param start_date: beginning of month
     :param end_date: end of month
     :param target_folder_path: folder to save results in
+    :param repetitions: number of R^2 values to obtain using predictive model
     :return:
     """
     # create folder for country
@@ -233,6 +185,12 @@ def find_monthly_correlations(covid_data: pd.DataFrame,
     except FileExistsError:
         print("Raw data folder for country already exists, continuing")
 
+    raw_data_country_unfiltered_path = os.path.join(raw_data_country_path, "unfiltered")
+    try:
+        os.mkdir(raw_data_country_unfiltered_path)
+    except FileExistsError:
+        print("Unfiltered folder for country already exists, continuing")
+
     # show sample of dataframe and print all columns
     print(covid_data.head())
     column_list = covid_data.columns.values.tolist()
@@ -244,40 +202,115 @@ def find_monthly_correlations(covid_data: pd.DataFrame,
     months = find_months(start_date_object.month, start_date_object.year, end_date_object.month,
                          end_date_object.year)
 
-    df = pd.DataFrame(columns=["country", "range_start", "range_end", "indicator", "correlation_to_stringency"])
+    fixed_columns = ["country",
+                     "range_start",
+                     "range_end",
+                     "no_of_values",
+                     "indicator",
+                     "correlation_to_stringency",
+                     "alt_correlation_to_stringency",
+                     "adj_correlation_to_stringency"]
+
+    predicted_columns = [f"pred_correlation_to_stringency_{i}" for i in range(repetitions)]
+
+    columns = fixed_columns + predicted_columns
+
+    df = pd.DataFrame(columns=columns)
     for month, year in months:
         month_start_date_object = datetime(year, month, 1)
         final_day_in_month = calendar.monthrange(year, month)[1]
         month_end_date_object = datetime(year, month, final_day_in_month)
         # filter for specific country and dates
-        covid_data_country_timeframe = filter_dataframe_country_timeframe(covid_data, country_name, month_start_date_object,
+        covid_data_country_timeframe = filter_dataframe_country_timeframe(covid_data,
+                                                                          country_name,
+                                                                          month_start_date_object,
                                                                           month_end_date_object)
         for param in parameters_of_interest:
-            single_param_df = covid_data_country_timeframe[[param, "stringency_index"]]
+            single_param_df = covid_data_country_timeframe[[param, "stringency_index", "date"]]
+            file_path = os.path.join(raw_data_country_unfiltered_path,
+                                     f"{country_name}_{param}_{month}_{year}_df_unfiltered.csv")
+            single_param_df.to_csv(file_path)
             single_param_df_filtered = single_param_df.dropna()
+            single_param_df_filtered.sort_values(by=param, ascending=True)
             file_path = os.path.join(raw_data_country_path, f"{country_name}_{param}_{month}_{year}_df_filtered.csv")
             single_param_df_filtered.to_csv(file_path)
-            if single_param_df_filtered.size > 5:
-                x = single_param_df_filtered[param]
-                x_one_dimensional = x.values.reshape(-1, 1)  # must convert to 1D array for R^2 calculation
-                y = single_param_df_filtered["stringency_index"]
-                model = LinearRegression()
-                print(f"Looking for R^2 for {country_name} between {start_date} and {end_date}, param {param}")
-                print(f"Size of filtered df is {single_param_df_filtered.size}")
-                model.fit(x_one_dimensional, y)
-                r_squared = model.score(x_one_dimensional, y)
-            else:
+            stringency_range = single_param_df_filtered["stringency_index"].max() - single_param_df_filtered["stringency_index"].min()
+            print(f"Stringency range for {country_name} between {month_start_date_object} and {month_end_date_object} "
+                  f"is {stringency_range}")
+
+            if single_param_df_filtered.shape[0] < 5:
+                print(f"Did not look for R^2 value for {country_name} between {month_start_date_object}"
+                      f"and {month_end_date_object} for {param}, only {single_param_df_filtered.shape[0]} "
+                      f"data points available")
                 r_squared = None
-                print(f"Did not look for R^2 value for {country_name} between {start_date} and {end_date} for"
-                      f"{param}, only {single_param_df_filtered.size - 1} datapoints available")
-            df_row = pd.DataFrame.from_records([{"country": country_name,
-                                                 "range_start": month_start_date_object,
-                                                 "range_end": month_end_date_object,
-                                                 "indicator": param,
-                                                 "correlation_to_stringency": r_squared}])
+                r_squared_alt = None
+                r_squared_adj = None
+                predictive_r_squared_values = {}
+
+            elif stringency_range < 0.2:
+                print("Did not look for R^2 values due to insufficient change in stringency index")
+                r_squared = None
+                r_squared_alt = None
+                r_squared_adj = None
+                predictive_r_squared_values = {}
+
+            else:
+                x = single_param_df_filtered[param]
+                y = single_param_df_filtered["stringency_index"]
+                x_one_dimensional = x.values.reshape(-1, 1)  # must convert to 1D array for R^2 calculation
+                model = LinearRegression()
+                print(f"Looking for R^2 for {country_name} between {month_start_date_object} and "
+                      f"{month_end_date_object}, param {param}")
+                print(f"Number of rows of df is {single_param_df_filtered.shape[0]}")
+                model.fit(x_one_dimensional, y)
+                # using sklearn without prediction
+                r_squared = model.score(x_one_dimensional, y)
+                # using statsmodels.api OLS
+                result = sm.OLS(y, sm.add_constant(x)).fit()
+                # statsmodels.api regular R^2
+                r_squared_alt = result.rsquared
+                # statsmodels.api adjusted R^2
+                r_squared_adj = result.rsquared_adj
+                # R^2 values calculated using predictive model
+                predictive_r_squared_values = calc_r_squared_predictive_model(x_one_dimensional, y, repetitions)
+
+            fixed_results = {"country": country_name,
+                             "range_start": month_start_date_object,
+                             "range_end": month_end_date_object,
+                             "no_of_values": single_param_df_filtered.shape[0],
+                             "indicator": param,
+                             "correlation_to_stringency": r_squared,
+                             "alt_correlation_to_stringency": r_squared_alt,
+                             "adj_correlation_to_stringency": r_squared_adj}
+
+            row = fixed_results | predictive_r_squared_values
+
+            df_row = pd.DataFrame.from_records([row])
             df = pd.concat([df, df_row], axis=0)
     file_path = os.path.join(country_path, f"{country_name}_monthly_correlations.csv")
     df.to_csv(file_path)
+
+
+def calc_r_squared_predictive_model(x: numpy.ndarray, y: pandas.core.series.Series,
+                                    repetitions: int) -> Dict[str, float]:
+    """
+    Given arrays with x and y values, calculate R^2 values using predictive model and return them in a dict
+    of the form {'pred_correlation_to_stringency_<num>': <r^2 value>}
+
+    :param x: numpy array containing x values
+    :param y: pandas series containg y values (stringency index)
+    :param repetitions: how many times to run predictions
+    :return: dict with r^2 values, see docstring
+    """
+    results = {}
+    for i in range(repetitions):
+        x_train, x_test, y_train, y_test = train_test_split(x, y)
+        pred_model = LinearRegression()
+        pred_model.fit(x_train, y_train)
+        y_pred = pred_model.predict(x_test)
+        r_squared_pred = r2_score(y_test, y_pred)
+        results[f"pred_correlation_to_stringency_{i}"] = r_squared_pred
+    return results
 
 
 def plot_graphs_whole_timerange() -> None:
@@ -381,93 +414,3 @@ def plot_scatter_with_trendline(independent_variable: str, df: pd.DataFrame, cou
                              f"scatter_trendline_{dependent_variable}_{independent_variable}_{country_name}.png")
     plt.savefig(file_path)
     plt.close()
-
-
-def multiple_linear_regression(predictors: List[str], df: pd.DataFrame, country_name: str,
-                               country_path: Union[str, Path]) -> None:
-    """
-    Given a list of predictors (independent variables) for which we have data in the given data frame, produce
-    a multiple linear regression model based on all the given predictors.
-
-    :param predictors: list of str - column names of predictors of 'stringency_index'
-    :param df: dataframe containing the data
-    :param country_name: str country name
-    :return: None
-    """
-    folder_path = os.path.join(country_path, "multiple_linear_regression")
-    try:
-        os.mkdir(folder_path)
-    except FileExistsError:
-        print("Folder already exists, continuing")
-    interested_columns = predictors.copy()
-    interested_columns.append("stringency_index")
-    # filter only columns we are interested in
-    df = df[interested_columns]
-    # drop duplicate columns
-    df = df.loc[:, ~df.columns.duplicated()]
-    df = df.dropna()
-    file_path = os.path.join(folder_path, f"df_mutliple_regression_data_{country_name}.csv")
-    df.to_csv(file_path)
-    x = df[predictors]
-    x = x.dropna()
-    y = df["stringency_index"]
-    # x = np.array(x)
-    # y = np.array(y)
-    model = LinearRegression()
-    model.fit(x, y)
-    r_sq = model.score(x, y)
-    print(f"R squared of multiple regression model is {r_sq}\n")
-    print("Correlation coefficients are: \n")
-    coeff_df = pd.DataFrame(model.coef_, x.columns, columns=['Coefficient'])
-    with pd.option_context("display.max_rows", None, "display.max_columns", None):
-        print(coeff_df)
-
-
-def alt_multiple_linear_regression_with_plot(predictors: List[str], df: pd.DataFrame, country_name: str,
-                                             start_date: str, end_date: str, country_path: Union[str, Path]) -> None:
-    """
-    Given a list of predictors (independent variables) for which we have data in the given data frame, produce
-    a multiple linear regression model based on all the given predictors - alternative method.
-
-    :param predictors: list of str - column names of predictors of 'stringency_index'
-    :param df: dataframe containing the data
-    :param country_name: str country name
-    :param start_date: str begin of date range
-    :param end_date: str end of date range
-    :return: None
-    """
-    folder_path = os.path.join(country_path, "multiple_linear_regression")
-    try:
-        os.mkdir(folder_path)
-    except FileExistsError:
-        print("Folder already exists, continuing")
-    interested_columns = predictors.copy()
-    interested_columns.append("stringency_index")
-    # filter only columns we are interested in
-    df = df[interested_columns]
-    # drop duplicate columns
-    df = df.loc[:, ~df.columns.duplicated()]
-    df = df.dropna()
-    file_path = os.path.join(folder_path, f"df_multiple_regression_data_{country_name}_alt.csv")
-    df.to_csv(file_path)
-    x = df[predictors]
-    x = x.dropna()
-    y = df["stringency_index"]
-    x_train, x_test, y_train, y_test = train_test_split(x, y)
-    model = LinearRegression()
-    model.fit(x_train, y_train)
-    y_pred = model.predict(x_test)
-    r_squared = r2_score(y_test, y_pred) * 100
-    print(f"R squared value is {r_squared}")
-    pred_df = pd.DataFrame({'actual_value': y_test, 'predicted_value': y_pred, 'Difference': y_test - y_pred})
-    file_path = os.path.join(folder_path, f"predicted_vs_actual_values_alt_{country_name}.csv")
-    pred_df.to_csv(file_path)
-    pred_df = pred_df[["actual_value", "predicted_value"]]
-    pred_df = pred_df.dropna()
-    plot_scatter("actual_value", pred_df, country_name, country_path, start_date, end_date, "predicted_value")
-    coeff_df = pd.DataFrame(model.coef_, x.columns, columns=['Coefficient'])
-    file_path = os.path.join(folder_path, f"correlation_coefficients_multiple_regression_alt_{country_name}.csv")
-    coeff_df.to_csv(file_path)
-    print(f"ALT: Mean Absolute Error: {mean_absolute_error(y_test, y_pred)}")
-    print(f"ALT: Mean Squared Error: {mean_squared_error(y_test, y_pred)}")
-    print(f"ALT: Root Mean Squared Error: {sqrt(mean_squared_error(y_test, y_pred))}")
