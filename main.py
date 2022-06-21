@@ -13,7 +13,7 @@ DATASET_URL = "https://covid.ourworldindata.org/data/owid-covid-data.csv"
 # single country vs multi country behaviour
 SINGLE_COUNTRY = True
 # country whose data we are interested in
-COUNTRY = "Sweden"
+COUNTRY = "United Kingdom"
 # list of countries we are interested in
 COUNTRIES = ["Sweden", "United Kingdom"]
 # If this is set to True, and AUTO_PARAMETERS is also true, then the program will find the most correlated parameters
@@ -53,7 +53,7 @@ RESULTS_FOLDER: Optional[str] = None
 def main() -> None:
     log.info("Running...")
     file_path = download(DATASET_URL)
-    analyze_data(filepath=file_path,
+    analyze_data(filepath_covid_data=file_path,
                  single_country=SINGLE_COUNTRY,
                  country_name=COUNTRY,
                  countries_list=COUNTRIES,
