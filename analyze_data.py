@@ -244,14 +244,15 @@ def find_monthly_correlations(covid_data: pd.DataFrame,
             single_param_df.to_csv(file_path)
             single_param_df_filtered = single_param_df.dropna()
             single_param_df_filtered.sort_values(by=param, ascending=True)
-            file_path_filtered = os.path.join(raw_data_country_path, f"{country_name}_{param}_{month}_{year}_df_filtered.csv")
+            file_path_filtered = os.path.join(
+                raw_data_country_path, f"{country_name}_{param}_{month}_{year}_df_filtered.csv")
             single_param_df_filtered.to_csv(file_path_filtered)
             stringency_range = single_param_df_filtered["stringency_index"].max() - single_param_df_filtered[
                 "stringency_index"].min()
             stringency_month_avg = single_param_df_filtered["stringency_index"].mean()
             indicator_month_avg = single_param_df_filtered[param].mean()
-            msg = f"Stringency range for {country_name} between {month_start_date_object} and {month_end_date_object} " \
-                  f"is {stringency_range}"
+            msg = f"Stringency range for {country_name} between {month_start_date_object} and {month_end_date_object}" \
+                  f" is {stringency_range}"
             print(msg)
             log.info(msg)
 
@@ -389,6 +390,8 @@ def plot_graphs_country_whole_timerange(df: pd.DataFrame, country: str, paramete
         plt.title(f"R^2 between {param} and stringency index")
         plt.xlabel("Time")
         plt.ylabel("R^2")
+        plt.xticks(rotation=90)
+        plt.tight_layout()
         image_path = os.path.join(graphs_folder, f"{param}_stringency_{country}.png")
         plt.savefig(image_path)
         plt.close()

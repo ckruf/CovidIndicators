@@ -15,7 +15,7 @@ COUNTRIES = ["Sweden", "United Kingdom"]
 START_DATE = "2020-03-01"
 END_DATE = "2020-12-31"
 # Here, you can manually set parameters you are interested in
-PARAMETERS_OF_INTEREST = ["icu_patients", "positive_rate", "reproduction_rate"]
+PARAMETERS_OF_INTEREST = ["icu_patients", "hosp_patients", "total_cases", "total_deaths", "new_deaths", "new_cases"]
 # You can optionally specify a path to the target folder/directory in which you want the results to be saved.
 # In this folder, the program will create a folder called 'Results' with appropriate subfolders.
 # If None is provided, the Results folder will be created in this project.
