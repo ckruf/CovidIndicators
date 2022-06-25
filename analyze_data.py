@@ -1,18 +1,16 @@
-import numpy
 import pandas as pd
 import matplotlib.pyplot as plt
-import pandas.core.series
 import statsmodels.api as sm
 from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import r2_score
 from datetime import datetime
 from dateutil.rrule import rrule, MONTHLY
 import calendar
-from typing import Optional, List, Tuple, Dict
+from typing import Optional, List, Tuple
 import os
 from pathlib import Path
+# import all necessary third party libraries
 
+# import logging tool
 from app_logging import log
 
 
@@ -33,16 +31,21 @@ def filter_dataframe_country_timeframe(df: pd.DataFrame, country: str, start_dat
     # raise error if dataframe is empty after querying
     if covid_data_country.size < 1:
         raise ValueError(f"No data exists for given country - {country} - either misspelled or non-existent.")
+    # print dataframe size after filtering for country
     print_df_size(covid_data_country, f"{country} all time has size")
+    # if no start and end dates were provided, return the dataframe filtered for country only
     if start_date is None or end_date is None:
         return covid_data_country
-    # time range query
+    # time range query betwen given dates
     covid_data_country_timeframe = covid_data_country[(covid_data_country['date'] >= start_date) &
                                                       (covid_data_country['date'] <= end_date)]
+    # if filtered dataframe has less than 1 record, raise error
     if covid_data_country_timeframe.size < 1:
         raise ValueError(f"No data exists for {country} between dates {start_date} and {end_date}")
+    # print size of dataframe filtered for country and date range
     print_df_size(covid_data_country_timeframe, f"{country} between {start_date} and {end_date}")
 
+    # return filtered data frame
     return covid_data_country_timeframe
 
 
